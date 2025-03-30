@@ -1,0 +1,6 @@
+Tariq A, Lancaster L, Elugunti P, Siebeneck E, Noe K, Borah B, Moriarty J, Banerjee I, Patel BN. Graph convolutional network-based fusion model to predict risk of hospital acquired infections. J Am Med Inform Assoc. 2023 May 19;30(6):1056-1067. doi: 10.1093/jamia/ocad045. PMID: 37027831; PMCID: PMC10198521.
+Ahmedt-Aristizabal D, Armin MA, Denman S, Fookes C, Petersson L. Graph-Based Deep Learning for Medical Diagnosis and Analysis: Past, Present and Future. Sensors (Basel). 2021 Jul 12;21(14):4758. doi: 10.3390/s21144758. PMID: 34300498; PMCID: PMC8309939.
+
+Synthea for synthetic medical record generation.
+
+PyTorch for GNN model generation
