@@ -36,12 +36,13 @@ def create_observation_mapping(observations_df):
 def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
                         conditions_df, medications_df, code_to_idx, num_codes):
     """Build a PyG graph for a single patient using encounters only.
-
+    
        Timeline events (nodes) are created based solely on the patient’s encounters,
        sorted by time. Temporal edges are added between successive timeline events.
-
-       Medications (and conditions) are attached to timeline events based on the original
-       encounter connection (for medications) or based on their valid time window (for conditions).
+    
+       Medications are attached to timeline events based on the original encounter connection.
+       Conditions are first attached using generic temporal overlaps. Then we add special 
+       START and END edges for conditions.
     """
     # Get patient-specific data (assumes patients_df has a column "Id")
     pat_data = patients_df[patients_df["Id"] == patient_id]
@@ -122,7 +123,7 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
     # --------------------------
     edges = []
     edge_attrs = []
-    med_offset = num_timeline
+    med_offset = num_timeline  # medication nodes come after timeline nodes
     cond_offset = num_timeline + len(pat_medications)
 
     # (a) Temporal edges for timeline events:
@@ -134,7 +135,6 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
         edge_attrs.append([t_diff])
 
     # (b) Medication -> Timeline edges:
-    med_offset = num_timeline  # medication nodes come after timeline nodes
     for med_idx, (_, med) in enumerate(pat_medications.iterrows()):
         encounter_id = med["ENCOUNTER"]
         if encounter_id in timeline_encounter_mapping:
@@ -142,11 +142,11 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
             edges.append((med_offset + med_idx, timeline_idx))
             edge_attrs.append([0.0])
 
-    # Modified condition->timeline edges with tracking (part c)
+    # (c) Generic Condition -> Timeline edges (temporal overlaps)
     connected_conditions = set()
     for cond_idx, (_, cond) in enumerate(pat_conditions.iterrows()):
         cond_start = cond["START_dt"]
-        cond_stop = cond["STOP_dt"] if pd.notnull(cond["STOP_dt"]) else cond_start
+        cond_stop = cond["STOP_dt"] if pd.notnull(cond["STOP_dt"]) else cond["START_dt"]
         connected = False
         for t_idx, (ts, _, _, _) in enumerate(timeline_events):
             if cond_start <= ts <= cond_stop:
@@ -156,7 +156,65 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
         if connected:
             connected_conditions.add(cond_idx)
 
-    # New edges: Medication-Medication temporal overlaps
+    # For conditions with no generic connection, connect to nearest post-encounter
+    for cond_idx in range(len(pat_conditions)):
+        if cond_idx not in connected_conditions:
+            cond = pat_conditions.iloc[cond_idx]
+            cond_stop = cond["STOP_dt"] if pd.notnull(cond["STOP_dt"]) else cond["START_dt"]
+            post_encounters = [(i, ts) for i, (ts, _, _, _) in enumerate(timeline_events) if ts > cond_stop]
+            if post_encounters:
+                post_encounters.sort(key=lambda x: x[1])
+                t_idx = post_encounters[0][0]
+            else:
+                t_idx = len(timeline_events) - 1
+            if t_idx >= 0:
+                edges.append((cond_offset + cond_idx, t_idx))
+                edge_attrs.append([0.0])
+
+    # (d) Special START and END edges for each condition
+    for cond_idx, (_, cond) in enumerate(pat_conditions.iterrows()):
+        cond_start = cond["START_dt"]
+        cond_stop = cond["STOP_dt"] if pd.notnull(cond["STOP_dt"]) else cond["START_dt"]
+        
+        # Find all timeline events within the valid window
+        valid_indices = [t_idx for t_idx, (ts, _, _, _) in enumerate(timeline_events)
+                        if cond_start <= ts <= cond_stop]
+
+        # If none, choose the earliest encounter after cond_stop (or last encounter)
+        if not valid_indices:
+            post_encounters = [(i, ts) for i, (ts, _, _, _) in enumerate(timeline_events) if ts > cond_stop]
+            if post_encounters:
+                valid_indices = [min(post_encounters, key=lambda x: x[1])[0]]
+            else:
+                valid_indices = [num_timeline - 1]
+
+        # Determine start and end indices (if only one, start and end are equal)
+        start_idx = min(valid_indices)
+        end_idx = max(valid_indices)
+
+        # Remove ONLY the generic edges that are being replaced
+        edges_to_remove = set((cond_offset + cond_idx, t_idx) for t_idx in [start_idx, end_idx])
+        filtered_edges = []
+        filtered_edge_attrs = []
+
+        for edge, attr in zip(edges, edge_attrs):
+            if edge not in edges_to_remove:  # Keep all other generic edges
+                filtered_edges.append(edge)
+                filtered_edge_attrs.append(attr)
+
+        edges = filtered_edges
+        edge_attrs = filtered_edge_attrs
+
+        # Add START edge
+        edges.append((cond_offset + cond_idx, start_idx))
+        edge_attrs.append([1.0])  # Flag for START edge
+
+        # Add END edge
+        edges.append((cond_offset + cond_idx, end_idx))
+        edge_attrs.append([2.0])  # Flag for END edge
+
+
+    # (e) New edges: Medication-Medication temporal overlaps
     for i in range(len(pat_medications)):
         med_i = pat_medications.iloc[i]
         start_i = med_i["START_dt"]
@@ -170,7 +228,7 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
                 edges.append((med_offset + j, med_offset + i))
                 edge_attrs.extend([[0.0], [0.0]])
 
-    # New edges: Condition-Condition temporal overlaps
+    # (f) New edges: Condition-Condition temporal overlaps
     for i in range(len(pat_conditions)):
         cond_i = pat_conditions.iloc[i]
         start_i = cond_i["START_dt"]
@@ -184,7 +242,7 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
                 edges.append((cond_offset + j, cond_offset + i))
                 edge_attrs.extend([[0.0], [0.0]])
 
-    # New edges: Condition-Medication temporal overlaps
+    # (g) New edges: Condition-Medication temporal overlaps
     for cond_idx in range(len(pat_conditions)):
         cond = pat_conditions.iloc[cond_idx]
         c_start = cond["START_dt"]
@@ -197,29 +255,6 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
                 edges.append((cond_offset + cond_idx, med_offset + med_idx))
                 edges.append((med_offset + med_idx, cond_offset + cond_idx))
                 edge_attrs.extend([[0.0], [0.0]])
-
-    # Connect unmapped conditions to post-encounters
-    encounter_times = [event[0] for event in timeline_events]
-    for cond_idx in range(len(pat_conditions)):
-        if cond_idx not in connected_conditions:
-            cond = pat_conditions.iloc[cond_idx]
-            cond_stop = cond["STOP_dt"] or cond["START_dt"]
-
-            # Find first encounter after condition end
-            post_encounters = [(i, ts) for i, (ts, _, _, _)
-                             in enumerate(timeline_events) if ts > cond_stop]
-
-            if post_encounters:
-                # Get earliest post encounter
-                post_encounters.sort(key=lambda x: x[1])
-                t_idx = post_encounters[0][0]
-            else:
-                # Use last encounter if none found
-                t_idx = len(timeline_events) - 1
-
-            if t_idx >= 0:
-                edges.append((cond_offset + cond_idx, t_idx))
-                edge_attrs.append([0.0])
 
     # --------------------------
     # 5. Combine All Components and Create PyG Data Object
@@ -252,6 +287,7 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
         num_conditions=torch.tensor([num_conditions], dtype=torch.long)
     )
     return data
+
 
 # --------------------------
 # Main Execution
