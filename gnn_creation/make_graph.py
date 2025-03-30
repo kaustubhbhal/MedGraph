@@ -3,18 +3,18 @@ import numpy as np
 from datetime import datetime
 import torch
 from torch_geometric.data import Data
+from combined_schemas import combine_schemas
 
 # --------------------------
 # Data Loading & Preparation
 # --------------------------
-
-def load_data():
-    """Load all CSV files into DataFrames without using procedures."""
-    patients = pd.read_csv("md_data/patients.csv")
-    observations = pd.read_csv("md_data/observations.csv")
-    encounters = pd.read_csv("md_data/encounters.csv")
-    conditions = pd.read_csv("md_data/conditions.csv")
-    medications = pd.read_csv("md_data/medications.csv")
+def load_data(data_folder):
+    """Load all CSV files from a given data folder into DataFrames without using procedures."""
+    patients = pd.read_csv(f"{data_folder}/patients.csv")
+    observations = pd.read_csv(f"{data_folder}/observations.csv")
+    encounters = pd.read_csv(f"{data_folder}/encounters.csv")
+    conditions = pd.read_csv(f"{data_folder}/conditions.csv")
+    medications = pd.read_csv(f"{data_folder}/medications.csv")
 
     # Parse datetime fields for files with time info (encounters, conditions, medications)
     for df in [encounters, conditions, medications]:
@@ -26,13 +26,13 @@ def load_data():
 
 def create_observation_mapping(observations_df):
     """Create mapping from observation codes to feature indices"""
-    observation_codes = observations_df["CODE"].unique()
-    return {code: i for i, code in enumerate(observation_codes)}, len(observation_codes)
+    # Use combined_schemas (which loads data from all four folders) to build a unified mapping.
+    observation_code_to_index, index_to_observation_code = combine_schemas()
+    return observation_code_to_index, len(index_to_observation_code)
 
 # --------------------------
 # Graph Construction
 # --------------------------
-
 def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
                         conditions_df, medications_df, code_to_idx, num_codes):
     """Build a PyG graph for a single patient using encounters only.
@@ -213,7 +213,6 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
         edges.append((cond_offset + cond_idx, end_idx))
         edge_attrs.append([2.0])  # Flag for END edge
 
-
     # (e) New edges: Medication-Medication temporal overlaps
     for i in range(len(pat_medications)):
         med_i = pat_medications.iloc[i]
@@ -288,31 +287,35 @@ def build_patient_graph(patient_id, patients_df, observations_df, encounters_df,
     )
     return data
 
-
 # --------------------------
 # Main Execution
 # --------------------------
-
 if __name__ == "__main__":
-    # Load data and create observation mapping
-    patients, observations, encounters, conditions, medications = load_data()
-    code_to_idx, num_codes = create_observation_mapping(observations)
+    # List of data folders to process
+    data_folders = ["ca_data", "tx_data", "co_data", "ma_data"]
 
-    patient_graphs = []
-    for _, patient in patients.iterrows():
-        graph = build_patient_graph(
-            patient["Id"],
-            patients,
-            observations,
-            encounters,
-            conditions,
-            medications,
-            code_to_idx,
-            num_codes
-        )
-        if graph is not None:
-            patient_graphs.append(graph)
-            print(f"Processed patient {patient['Id']} with {graph.x.size(0)} nodes")
+    # Create the unified observation mapping (using combined_schemas)
+    code_to_idx, num_codes = create_observation_mapping(None)  # Parameter is not used here
 
-    torch.save(patient_graphs, 'patient_graphs.pt')
-    print(f"\nSuccessfully processed {len(patient_graphs)} patient graphs!")
+    for folder in data_folders:
+        print(f"\nProcessing data from {folder}...")
+        patients, observations, encounters, conditions, medications = load_data(folder)
+        patient_graphs = []
+        for _, patient in patients.iterrows():
+            graph = build_patient_graph(
+                patient["Id"],
+                patients,
+                observations,
+                encounters,
+                conditions,
+                medications,
+                code_to_idx,
+                num_codes
+            )
+            if graph is not None:
+                patient_graphs.append(graph)
+                print(f"Processed patient {patient['Id']} with {graph.x.size(0)} nodes")
+
+        output_file = f"{folder}_patient_graphs.pt"
+        torch.save(patient_graphs, output_file)
+        print(f"\nSuccessfully processed {len(patient_graphs)} patient graphs for {folder} and saved to {output_file}!")
