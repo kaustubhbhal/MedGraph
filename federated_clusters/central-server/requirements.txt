@@ -1,0 +1,7 @@
+flask==2.1.2
+torch==1.12.1
+numpy<2
+torch_geometric
+scikit-learn
+werkzeug==2.0
+cryptography==39.0.1
