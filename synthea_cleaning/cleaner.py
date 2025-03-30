@@ -4,8 +4,8 @@ from scipy.stats import zscore
 import numpy as np
 
 # Configuration
-input_dir = Path("./Maryland")  # Update this path
-output_dir = Path("cleaned_data")
+input_dir = Path("./Texas")  # Update this path
+output_dir = Path("cleaned_data_Texas300")
 output_dir.mkdir(exist_ok=True)
 
 # Define columns to keep for each file type
