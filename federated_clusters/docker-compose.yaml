@@ -18,7 +18,7 @@ services:
 
   hospital2:
     build:
-      context: ./hospital-container-1
+      context: ./hospital-container-2
     networks:
       - federated-net
     environment:
@@ -26,7 +26,7 @@ services:
 
   hospital3:
     build:
-      context: ./hospital-container-1
+      context: ./hospital-container-3
     networks:
       - federated-net
     environment:
@@ -34,7 +34,7 @@ services:
 
   hospital4:
     build:
-      context: ./hospital-container-1
+      context: ./hospital-container-4
     networks:
       - federated-net
     environment:

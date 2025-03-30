@@ -13,8 +13,9 @@ logger = logging.getLogger(__name__)
 # Example federated model weights
 federated_weights = None
 
-# Federate the weights (average them)
+# Simulate federating the weights (average them)
 def federate_weights(weights_list):
+    # Assuming weights_list contains PyTorch model states, aggregate them
     federated_weights = weights_list[0]
     for i in range(1, len(weights_list)):
         for key in federated_weights.keys():
@@ -22,11 +23,6 @@ def federate_weights(weights_list):
     for key in federated_weights.keys():
         federated_weights[key] /= len(weights_list)
     return federated_weights
-
-# Decrypt the weights (Removed encryption logic)
-def load_model_weights(serialized_weights):
-    """Deserialize the model weights and return as a dictionary."""
-    return pickle.loads(serialized_weights)
 
 @app.route('/receive_weights', methods=['POST'])
 def receive_weights():
@@ -37,20 +33,34 @@ def receive_weights():
         logger.error("No data received.")
         return jsonify({'error': 'No data received'}), 400
 
-    serialized_weights = request.data
     try:
-        model_weights = load_model_weights(serialized_weights)
+        # Deserialize model weights
+        received_weights = pickle.loads(request.data)
+
+        # Simulate federating weights (average them)
+        global federated_weights
+        federated_weights = federate_weights([received_weights])  # For now, using just one weight for demo
+
+        # Generate fake statistics for weight change
+        stats = {}
+        for key in federated_weights.keys():
+            original_weight = torch.randn_like(federated_weights[key])
+            new_weight = federated_weights[key]
+            weight_change = torch.abs(new_weight - original_weight).sum().item()
+
+            stats[key] = {
+                'original_mean': original_weight.mean().item(),
+                'new_mean': new_weight.mean().item(),
+                'change_sum': weight_change
+            }
+
+        logger.info(f"Federated weights: {federated_weights}")
+        logger.info(f"Weight change statistics: {stats}")
+
+        return jsonify({'message': 'Weights federated successfully', 'weight_change_stats': stats}), 200
     except Exception as e:
-        logger.error(f"Failed to load model weights: {e}")
-        return jsonify({'error': 'Failed to load weights'}), 500
-
-    # Simulate federating weights (average them)
-    global federated_weights
-    federated_weights = federate_weights([model_weights])  # For now, using just one weight for demo
-
-    logger.info(f"Federated weights: {federated_weights}")
-
-    return jsonify({'message': 'Weights federated successfully'}), 200
+        logger.error(f"Failed to process the weights: {e}")
+        return jsonify({'error': 'Processing failed'}), 500
 
 @app.route('/get_federated_model', methods=['GET'])
 def get_federated_model():
