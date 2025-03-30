@@ -1,0 +1,45 @@
+version: '3'
+services:
+  central-server:
+    build:
+      context: ./central-server
+    ports:
+      - "5001:5000"  # Map host port 5001 to container port 5000
+    networks:
+      - federated-net
+
+  hospital1:
+    build:
+      context: ./hospital-container-1
+    networks:
+      - federated-net
+    environment:
+      - HOSPITAL_ID=1
+
+  hospital2:
+    build:
+      context: ./hospital-container-1
+    networks:
+      - federated-net
+    environment:
+      - HOSPITAL_ID=2
+
+  hospital3:
+    build:
+      context: ./hospital-container-1
+    networks:
+      - federated-net
+    environment:
+      - HOSPITAL_ID=3
+
+  hospital4:
+    build:
+      context: ./hospital-container-1
+    networks:
+      - federated-net
+    environment:
+      - HOSPITAL_ID=4
+
+networks:
+  federated-net:
+    driver: bridge
