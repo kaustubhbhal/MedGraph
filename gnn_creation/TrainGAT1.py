@@ -11,8 +11,8 @@ import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 # Configuration
-ca_data = "ca_data/ca_data_patient_graphs.pt"
-GRAPH_FILE = ca_data 
+ma_data = "tx_data/tx_data_patient_graphs.pt"
+GRAPH_FILE = ma_data 
 # "patient_graphs.pt"
 CONDITION_SCHEMA_FILE = "condition_schema.json"
 LAST_ENCOUNTER_JSON = "last_encounter_conditions.json"
@@ -165,7 +165,7 @@ def train_binary_model(model, graphs, targets, epochs=100, lr=0.001):
 
 if __name__ == "__main__":
     if not os.path.exists(CONDITION_SCHEMA_FILE) or os.path.getsize(CONDITION_SCHEMA_FILE) == 0:
-        df = pd.read_csv("md_data/conditions_cleaned.csv")
+        df = pd.read_csv("tx_data/conditions.csv")
         truncated_codes = {truncate_code(code) for code in df['CODE']}
         schema = {code: idx for idx, code in enumerate(sorted(truncated_codes))}
         with open(CONDITION_SCHEMA_FILE, 'w') as f:
@@ -187,5 +187,5 @@ if __name__ == "__main__":
     ).to(DEVICE)
 
     train_binary_model(model, graphs, targets, epochs=100)
-    torch.save(model.state_dict(), "temp_binary_disease_predictor.pth")
+    torch.save(model.state_dict(), "tx_binary_disease_predictor.pth")
     print("Training complete with all fixes.")
